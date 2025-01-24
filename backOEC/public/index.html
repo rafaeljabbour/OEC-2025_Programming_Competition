@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>My Express App</title>
+    <meta charset="utf-8" />
+</head>
+
+<body>
+    <h1>Welcome to My Express App</h1>
+
+    <!-- Section: Add a new user -->
+    <section>
+        <h2>Add a New User</h2>
+        <form id="userForm">
+            <label for="userName">Name:</label>
+            <input type="text" id="userName" required />
+
+            <label for="userEmail">Email:</label>
+            <input type="email" id="userEmail" required />
+
+            <label for="userPassword">Password:</label>
+            <input type="password" id="userPassword" required />
+
+            <button type="submit">Add User</button>
+        </form>
+    </section>
+
+    <!-- Section: Fetch all users -->
+    <section>
+        <h2>Existing Users</h2>
+        <button id="fetchUsersBtn">Fetch All Users</button>
+        <ul id="userList"></ul>
+    </section>
+
+    <!-- Section: Login test -->
+    <section>
+        <h2>Login Test</h2>
+        <form id="loginForm">
+            <label for="loginEmail">Email:</label>
+            <input type="email" id="loginEmail" required />
+
+            <label for="loginPassword">Password:</label>
+            <input type="password" id="loginPassword" required />
+
+            <button type="submit">Login</button>
+        </form>
+    </section>
+
+    <script>
+        // 1. Handle the form submission to create a new user
+        const userForm = document.getElementById('userForm');
+        userForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const name = document.getElementById('userName').value;
+            const email = document.getElementById('userEmail').value;
+            const password = document.getElementById('userPassword').value;
+
+            try {
+                const response = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ name, email, password })
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    alert('Error creating user: ' + (errorData.error || 'Unknown error'));
+                    return;
+                }
+
+                const data = await response.json();
+                alert(`User created! ID: ${data._id}`);
+
+                // Clear the form
+                userForm.reset();
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        });
+
+        // 2. Fetch and display all users
+        const fetchUsersBtn = document.getElementById('fetchUsersBtn');
+        const userList = document.getElementById('userList');
+
+        fetchUsersBtn.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/api/users');
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    alert('Error fetching users: ' + (errorData.error || 'Unknown error'));
+                    return;
+                }
+
+                const users = await response.json();
+                // Clear the list before populating
+                userList.innerHTML = '';
+
+                // Display each user in a list item (excluding password)
+                users.forEach((user) => {
+                    const li = document.createElement('li');
+                    li.textContent = `${user.name} (${user.email})`;
+                    userList.appendChild(li);
+                });
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        });
+
+        // 3. Handle the login test
+        const loginForm = document.getElementById('loginForm');
+        loginForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+
+            const email = document.getElementById('loginEmail').value;
+            const password = document.getElementById('loginPassword').value;
+
+            try {
+                const response = await fetch('/api/users/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    // e.g., 401 Unauthorized or 404, etc.
+                    alert('Login failed: ' + (data.error || 'Unknown error'));
+                } else {
+                    alert(`Login successful! Message: ${data.message}`);
+                }
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        });
+    </script>
+</body>
+
+</html>
