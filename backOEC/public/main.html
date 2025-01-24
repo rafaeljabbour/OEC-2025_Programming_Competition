@@ -1,0 +1,518 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Fire Rescue App Demo (With Notes & Tracking)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Mapbox GL JS -->
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+
+    <!-- Mapbox GL Directions Plugin -->
+    <script
+        src="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.js"></script>
+    <link rel="stylesheet"
+        href="https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-directions/v4.1.1/mapbox-gl-directions.css"
+        type="text/css" />
+
+    <!-- Turf.js for geometry operations -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .ui-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 6px;
+            padding: 16px;
+            z-index: 2;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            width: 220px;
+        }
+
+        .ui-container h1 {
+            margin: 0 0 1em 0;
+            font-size: 1.2em;
+            text-align: center;
+        }
+
+        .ui-button,
+        .ui-input {
+            display: block;
+            width: 100%;
+            margin: 0.5em 0;
+            padding: 0.4em 0.6em;
+            font-size: 1em;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .ui-button {
+            cursor: pointer;
+            background-color: #f8f8f8;
+            transition: background-color 0.2s;
+        }
+
+        .ui-button:hover {
+            background-color: #eee;
+        }
+
+        .mapboxgl-ctrl-top-left {
+            margin-top: 10px;
+            margin-left: 10px;
+        }
+
+        /* A small style to reduce Popup width so it's more readable. */
+        .mapboxgl-popup-content {
+            max-width: 300px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- Custom UI Container -->
+    <div class="ui-container">
+        <h1>Fire Rescue</h1>
+
+        <!-- Toggle Disaster Modes -->
+        <button id="toggleBlockBtn" class="ui-button">Enable Fire Mode</button>
+        <button id="toggleFloodBtn" class="ui-button">Enable Flood Mode</button>
+        <button id="toggleEarthquakeBtn" class="ui-button">Enable Earthquake Mode</button>
+
+        <!-- Destination input (optional override) -->
+        <input id="destinationInput" class="ui-input" type="text" placeholder="Address or Lat,Lng..." />
+        <button id="setDestBtn" class="ui-button">Set Destination</button>
+
+        <!-- Focus user location -->
+        <button id="focusMeBtn" class="ui-button">Focus on Me</button>
+    </div>
+
+    <script>
+        'use strict';
+
+        // -----------------------------
+        // 1) BASIC MAP & DIRECTIONS
+        // -----------------------------
+        mapboxgl.accessToken =
+            'pk.eyJ1IjoicmFsZHV0ZWsiLCJhIjoiY202MmR5MDViMHlmMjJucG5mcWw4emo4ZSJ9.Ox0uAsJ9O66fBpsEUOMXlw';
+
+        // We'll set a default center, but we'll update it if geolocation fails.
+        // This can be any fallback you want; here we *start* at Toronto.
+        const defaultCenter = [-79.38, 43.65]; // Toronto
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: defaultCenter,
+            zoom: 12
+        });
+
+        map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+        map.addControl(
+            new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'metric' }),
+            'bottom-left'
+        );
+
+        const directions = new MapboxDirections({
+            accessToken: mapboxgl.accessToken,
+            unit: 'metric',
+            profile: 'mapbox/driving',
+            interactive: false,
+            controls: {
+                inputs: false,
+                instructions: true
+            }
+        });
+        map.addControl(directions, 'top-left');
+
+        // Optional: set max bounds if desired
+        // (Here it's roughly bounding the Toronto/Hamilton region)
+        const bounds = [
+            [-80, 43],   // SW corner
+            [-78.5, 44]  // NE corner
+        ];
+        map.setMaxBounds(bounds);
+
+        // -----------------------------
+        // 2) USER LOCATION
+        // -----------------------------
+        // We will store userLocation in [lng, lat] format
+        let userLocation = null;
+        let userMarker = null;
+
+        // If geolocation works:
+        if ('geolocation' in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    userLocation = [position.coords.longitude, position.coords.latitude];
+
+                    // Create/update user marker (green)
+                    if (!userMarker) {
+                        userMarker = new mapboxgl.Marker({ color: 'green' })
+                            .setLngLat(userLocation)
+                            .addTo(map);
+                    } else {
+                        userMarker.setLngLat(userLocation);
+                    }
+
+                    // Fly to user location the first time
+                    // or whenever you'd like. We'll just do it if user hits "Focus on Me".
+                },
+                (err) => {
+                    console.error('Geolocation error:', err);
+                    alert('Unable to retrieve your location. Defaulting to McMaster University.');
+
+                    // Fallback: McMaster University
+                    userLocation = [-79.9177, 43.2609];
+                    userMarker = new mapboxgl.Marker({ color: 'green' })
+                        .setLngLat(userLocation)
+                        .addTo(map);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        } else {
+            // If geolocation NOT available, fallback to McMaster
+            alert('Geolocation not supported. Defaulting to McMaster University.');
+            userLocation = [-79.9177, 43.2609];
+            userMarker = new mapboxgl.Marker({ color: 'green' })
+                .setLngLat(userLocation)
+                .addTo(map);
+        }
+
+        document.getElementById('focusMeBtn').addEventListener('click', () => {
+            if (userLocation) {
+                map.flyTo({ center: userLocation, zoom: 14 });
+            } else {
+                alert('User location not available yet.');
+            }
+        });
+
+        // We'll trigger route calculations in a separate function
+        // whenever needed.
+
+        // -----------------------------
+        // 3) LOAD SAFE HAVENS + FIRES
+        // -----------------------------
+        let safeHavensData = [];
+        let fireFeatures = [];
+        let fireBuffers = [];
+
+        map.on('load', () => {
+            loadSafeHavens();
+            loadFires();
+        });
+
+        async function loadSafeHavens() {
+            try {
+                const response = await fetch('/api/safe-havens');
+                safeHavensData = await response.json();
+
+                // Create markers for each safe haven
+                safeHavensData.forEach((haven) => {
+                    new mapboxgl.Marker({ color: 'yellow' })
+                        .setLngLat(haven.coords)
+                        .setPopup(
+                            new mapboxgl.Popup({ offset: 25 }).setHTML(
+                                `<h3>${haven.name}</h3><p>Safe Haven</p>`
+                            )
+                        )
+                        .addTo(map);
+                });
+            } catch (err) {
+                console.error('Failed to load safe havens:', err);
+            }
+        }
+
+        async function loadFires() {
+            try {
+                const response = await fetch('/api/fires');
+                const fires = await response.json();
+
+                // For each fire, place a red marker + buffer
+                fires.forEach((fire) => {
+                    // We'll add a fallback note/time just to demonstrate
+                    const timePlaced = new Date().toLocaleString();
+
+                    // Basic popup text:
+                    const popupHTML = `
+            <h3>Fire</h3>
+            <p>Time Placed (from server data): ${timePlaced}</p>
+            <p>Blocked area due to Fire</p>
+          `;
+
+                    new mapboxgl.Marker({ color: 'red' })
+                        .setLngLat(fire.coords)
+                        .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(popupHTML))
+                        .addTo(map);
+
+                    // Buffer for route checking
+                    const firePoint = turf.point(fire.coords);
+                    const bufferPoly = turf.buffer(firePoint, 0.02, { units: 'kilometers' });
+                    fireFeatures.push(firePoint);
+                    fireBuffers.push(bufferPoly);
+                });
+            } catch (err) {
+                console.error('Failed to load fires:', err);
+            }
+        }
+
+        // -----------------------------
+        // 4) DISASTER MODES
+        // -----------------------------
+        let fireMode = false;
+        let floodMode = false;
+        let earthquakeMode = false;
+
+        const toggleFloodBtn = document.getElementById('toggleFloodBtn');
+        const toggleEarthquakeBtn = document.getElementById('toggleEarthquakeBtn');
+        const toggleBlockBtn = document.getElementById('toggleBlockBtn');
+
+        toggleFloodBtn.addEventListener('click', () => {
+            floodMode = !floodMode;
+            if (floodMode) {
+                fireMode = false;
+                earthquakeMode = false;
+                toggleBlockBtn.textContent = 'Enable Fire Mode';
+                toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+            }
+            toggleFloodBtn.textContent = floodMode ? 'Disable Flood Mode' : 'Enable Flood Mode';
+        });
+
+        toggleEarthquakeBtn.addEventListener('click', () => {
+            earthquakeMode = !earthquakeMode;
+            if (earthquakeMode) {
+                fireMode = false;
+                floodMode = false;
+                toggleBlockBtn.textContent = 'Enable Fire Mode';
+                toggleFloodBtn.textContent = 'Enable Flood Mode';
+            }
+            toggleEarthquakeBtn.textContent = earthquakeMode
+                ? 'Disable Earthquake Mode'
+                : 'Enable Earthquake Mode';
+        });
+
+        toggleBlockBtn.addEventListener('click', () => {
+            fireMode = !fireMode;
+            if (fireMode) {
+                floodMode = false;
+                earthquakeMode = false;
+                toggleFloodBtn.textContent = 'Enable Flood Mode';
+                toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+            }
+            toggleBlockBtn.textContent = fireMode ? 'Disable Fire Mode' : 'Enable Fire Mode';
+        });
+
+        // -----------------------------
+        // 5) CLICK HANDLER FOR NEW MARKERS (Fire/Flood/Earthquake)
+        // -----------------------------
+        // We store local data for each newly-created marker: time placed, user note, edit history, etc.
+        map.on('click', async (event) => {
+            if (!fireMode && !floodMode && !earthquakeMode) {
+                return;
+            }
+            if (!userLocation) {
+                alert('User location not available yet.');
+                return;
+            }
+
+            const lngLat = [event.lngLat.lng, event.lngLat.lat];
+            const timePlaced = new Date().toLocaleString();
+
+            let markerColor = 'red';
+            let disasterType = 'Fire';
+            if (floodMode) {
+                markerColor = 'blue';
+                disasterType = 'Flood';
+            } else if (earthquakeMode) {
+                markerColor = 'brown';
+                disasterType = 'Earthquake';
+            }
+
+            // Each new marker has a data object to track time, note, and edit history
+            const markerData = {
+                disasterType,
+                timePlaced,
+                note: '',
+                edits: [] // will store objects like { time, newNote }
+            };
+
+            // Create the marker
+            const marker = new mapboxgl.Marker({ color: markerColor })
+                .setLngLat(lngLat)
+                .addTo(map);
+
+            // Create the popup with a function that returns the current HTML
+            function getMarkerPopupHTML(data) {
+                // Build an edit history list
+                const editsHTML = data.edits
+                    .map((e) => `<li><strong>${e.time}:</strong> ${e.newNote}</li>`)
+                    .join('');
+                const editHistory = editsHTML
+                    ? `<p><strong>Edit History:</strong></p><ul>${editsHTML}</ul>`
+                    : '';
+
+                return `
+          <h3>${data.disasterType}</h3>
+          <p><strong>Time Placed:</strong> ${data.timePlaced}</p>
+          <label for="popupNoteInput">Note:</label>
+          <textarea id="popupNoteInput" rows="2" style="width:100%;">${data.note}</textarea>
+          <button id="saveNoteBtn" style="margin-top:5px;">Save Note</button>
+          ${editHistory}
+        `;
+            }
+
+            const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(getMarkerPopupHTML(markerData));
+            marker.setPopup(popup);
+
+            // We'll attach logic to handle "Save Note" each time the popup is opened or refreshed
+            function attachPopupListeners() {
+                // Wait a moment for the DOM to be in place
+                setTimeout(() => {
+                    const saveBtn = document.getElementById('saveNoteBtn');
+                    if (saveBtn) {
+                        saveBtn.addEventListener('click', () => {
+                            const textArea = document.getElementById('popupNoteInput');
+                            if (!textArea) return;
+
+                            const newNote = textArea.value.trim();
+                            if (newNote !== markerData.note) {
+                                // Record the edit
+                                markerData.edits.push({
+                                    time: new Date().toLocaleString(),
+                                    newNote
+                                });
+                                // Update the main note
+                                markerData.note = newNote;
+                            }
+                            // Refresh the popup HTML
+                            popup.setHTML(getMarkerPopupHTML(markerData));
+                            attachPopupListeners();
+                        });
+                    }
+                }, 0);
+            }
+
+            // Attach listeners the first time the popup opens
+            popup.on('open', () => {
+                attachPopupListeners();
+            });
+
+            // If it's a Fire, create the buffer & (optionally) save to server
+            if (disasterType === 'Fire') {
+                const firePoint = turf.point(lngLat);
+                const bufferPoly = turf.buffer(firePoint, 0.02, { units: 'kilometers' });
+                fireFeatures.push(firePoint);
+                fireBuffers.push(bufferPoly);
+
+                // Example: POST to server if you want
+                try {
+                    await fetch('/api/fires', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ coords: lngLat })
+                    });
+                } catch (err) {
+                    console.error('Failed to save fire location:', err);
+                }
+            }
+        });
+
+        // -----------------------------
+        // 6) ROUTE CALCULATION
+        // (Optional: Recalc route to safe havens, etc.)
+        // -----------------------------
+        async function recalcRouteToBestSafeHaven() {
+            if (!userLocation) return;
+
+            // Example logic that tries direct route / detour route
+            // ...
+            // This function can be triggered whenever your data changes or user moves
+        }
+
+        function routeIntersectsFire(route) {
+            const routeCoords = route.geometry.coordinates;
+            const routeLine = turf.lineString(routeCoords);
+            return fireBuffers.some((poly) => turf.booleanIntersects(routeLine, poly));
+        }
+
+        async function fetchRoute(waypointsArr, finalCoords) {
+            const allPoints = [...waypointsArr, finalCoords];
+            const coordStr = allPoints.map((pt) => `${pt[0]},${pt[1]}`).join(';');
+            const url =
+                `https://api.mapbox.com/directions/v5/mapbox/driving/${coordStr}` +
+                `?geometries=geojson&overview=full&access_token=${mapboxgl.accessToken}`;
+            try {
+                const resp = await fetch(url);
+                if (!resp.ok) {
+                    console.error('Error fetching route:', resp.status, resp.statusText);
+                    return null;
+                }
+                return await resp.json();
+            } catch (err) {
+                console.error('Request failed:', err);
+                return null;
+            }
+        }
+
+        // -----------------------------
+        // 7) DESTINATION INPUT
+        // -----------------------------
+        let customDestinationActive = false;
+        const destinationInput = document.getElementById('destinationInput');
+        const setDestBtn = document.getElementById('setDestBtn');
+
+        setDestBtn.addEventListener('click', () => {
+            const inputValue = destinationInput.value.trim();
+            if (!inputValue) {
+                alert('Please enter a destination (address or lat,lng).');
+                return;
+            }
+            customDestinationActive = true;
+
+            if (userLocation) {
+                directions.setOrigin(userLocation);
+            } else {
+                directions.setOrigin(defaultCenter);
+            }
+
+            // If user enters "lat,lng" or "lng,lat"
+            const coords = inputValue.split(',');
+            if (coords.length === 2) {
+                const lat = parseFloat(coords[0]);
+                const lng = parseFloat(coords[1]);
+                if (!isNaN(lat) && !isNaN(lng)) {
+                    // We'll assume "lat,lng" format
+                    directions.setDestination([lng, lat]);
+                    return;
+                }
+            }
+
+            // Otherwise, treat as an address
+            directions.setDestination(inputValue);
+        });
+    </script>
+</body>
+
+</html>
