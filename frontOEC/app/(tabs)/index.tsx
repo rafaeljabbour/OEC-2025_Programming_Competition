@@ -24,7 +24,7 @@ export default function HomeScreen() {
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={styles.naturalDisastersButton}
-                onPress={() => router.push('/disasterscreen')}
+                onPress={() => router.push('/WebViewWithNotifications')}
               >
                 <Icon name="exclamation-triangle" size={30} color="#FFFFFF" />
                 <Text style={styles.buttonText}>Natural Disasters</Text>
