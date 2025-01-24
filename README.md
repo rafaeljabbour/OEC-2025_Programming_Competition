@@ -1,1 +1,1 @@
-# IEC-2025_Programming_Competition
+# OEC-2025_Programming_Competition
