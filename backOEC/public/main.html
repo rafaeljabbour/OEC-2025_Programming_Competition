@@ -486,13 +486,22 @@
         units: 'kilometers'
       });
       if (distanceKm <= 20) {
+
         // Get approximate direction
         const bearing = turf.bearing(turf.point(userLocation), turf.point(lngLat));
         const direction = bearingToCardinal(bearing);
-        alert(
-          `Warning: A ${disasterType} was placed ${distanceKm.toFixed(1)} km ` +
-          `to your ${direction}!`
-        );
+      const warningMessage = `Warning: A ${disasterType} was placed ${distanceKm.toFixed(1)} km to your ${direction}!`;
+
+    alert(warningMessage);
+
+    // Send warning to backend
+    fetch('http://your-backend-url.com/send-warning', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message: warningMessage }),
+    }).catch(error => console.error('Error sending warning:', error));
       }
     });
 
