@@ -1,7 +1,27 @@
+from pymongo import MongoClient
+
+# Replace the URI string with your MongoDB deployment's connection string.
+client = MongoClient('mongodb+srv://OEC2025:XcYQO7xiidOh83dV@oec2025.zmazd.mongodb.net/?retryWrites=true&w=majority&appName=OEC2025')
+
+# Connect to the database
+db = client['OEC2025']
+
+# Connect to the collection
+pins_collection = db['pins']
+
+# Fetch the coordinates from a pin
+pin = pins_collection.find_one({'type': 'Earthquake'})  # Adjust the query as needed
+
+if pin and 'coords' in pin:
+    longitude, latitude = pin['coords']
+    print(f"Longitude: {longitude}, Latitude: {latitude}")
+else:
+    print("No pin found or coordinates not available")
+
 #Come from the backend
 data = ' '
-marker_lat = 46.8862
-marker_lon = -79.3832
+marker_lat = 0
+marker_lon = 0
 
 lines = data.splitlines()
 months = []
@@ -40,4 +60,4 @@ plt.bar(monthlist, incidents)
 plt.title('Related Incidents in the last Year')
 plt.xlabel('Month')
 plt.ylabel('Incidents')
-plt.savefig('foo.png')
+plt.savefig('frontOEC/assets/images/graph.png')
