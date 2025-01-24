@@ -1,74 +1,113 @@
-import { Image, StyleSheet, Platform } from 'react-native';
-
-import { HelloWave } from '@/components/HelloWave';
-import ParallaxScrollView from '@/components/ParallaxScrollView';
-import { ThemedText } from '@/components/ThemedText';
-import { ThemedView } from '@/components/ThemedView';
+import React, { useState } from 'react';
+import { StyleSheet, TouchableOpacity, Text, View, SafeAreaView } from 'react-native';
+import Icon from 'react-native-vector-icons/FontAwesome'; // Import the Icon component
+import { WebView } from 'react-native-webview'; // Import WebView component
+import Header from '@/components/header'; // Import the Header component
+import { useRouter } from 'expo-router'; // Import useRouter from expo-router
 
 export default function HomeScreen() {
+  const [currentUrl, setCurrentUrl] = useState<string | null>(null);
+  const router = useRouter(); // Initialize router
+
+  const handleButtonPress = (url: string) => {
+    setCurrentUrl(url);
+  };
+
   return (
-    <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
-      headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
-        />
-      }>
-      <ThemedView style={styles.titleContainer}>
-        <ThemedText type="title">Welcome!</ThemedText>
-        <HelloWave />
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 1: Try it</ThemedText>
-        <ThemedText>
-          Edit <ThemedText type="defaultSemiBold">app/(tabs)/index.tsx</ThemedText> to see changes.
-          Press{' '}
-          <ThemedText type="defaultSemiBold">
-            {Platform.select({
-              ios: 'cmd + d',
-              android: 'cmd + m',
-              web: 'F12'
-            })}
-          </ThemedText>{' '}
-          to open developer tools.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 2: Explore</ThemedText>
-        <ThemedText>
-          Tap the Explore tab to learn more about what's included in this starter app.
-        </ThemedText>
-      </ThemedView>
-      <ThemedView style={styles.stepContainer}>
-        <ThemedText type="subtitle">Step 3: Get a fresh start</ThemedText>
-        <ThemedText>
-          When you're ready, run{' '}
-          <ThemedText type="defaultSemiBold">npm run reset-project</ThemedText> to get a fresh{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> directory. This will move the current{' '}
-          <ThemedText type="defaultSemiBold">app</ThemedText> to{' '}
-          <ThemedText type="defaultSemiBold">app-example</ThemedText>.
-        </ThemedText>
-      </ThemedView>
-    </ParallaxScrollView>
+    <SafeAreaView style={styles.container}>
+      {currentUrl ? (
+        <WebView source={{ uri: currentUrl }} style={styles.webview} />
+      ) : (
+        <>
+          <Header /> {/* Add the Header component */}
+          <View style={styles.contentContainer}>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={styles.naturalDisastersButton}
+                onPress={() => router.push('/disasterscreen')}
+              >
+                <Icon name="exclamation-triangle" size={30} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Natural Disasters</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diseasesButton}
+                onPress={() => router.push('/disease')}
+              >
+                <Icon name="medkit" size={30} color="#FFFFFF" />
+                <Text style={styles.buttonText}>Diseases</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.loginButton}
+              onPress={() => router.push('/loginscreen')}
+            >
+              <Icon name="sign-in" size={30} color="#FFFFFF" />
+              <Text style={styles.buttonText}>Login</Text>
+            </TouchableOpacity>
+          </View>
+        </>
+      )}
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  titleContainer: {
-    flexDirection: 'row',
+  container: {
+    flex: 1,
+    justifyContent: 'flex-start',
     alignItems: 'center',
-    gap: 8,
+    backgroundColor: '#FFFFFF', // Set background color to white
   },
-  stepContainer: {
-    gap: 8,
-    marginBottom: 8,
+  webview: {
+    flex: 1,
+    width: '100%',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
-    bottom: 0,
-    left: 0,
+  contentContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
+    padding: 20,
+  },
+  buttonContainer: {
+    width: '100%',
+    alignItems: 'center',
+  },
+  naturalDisastersButton: {
+    flexDirection: 'row', // Arrange icon and text in a row
+    width: '90%',
+    height: 100, // Set a specific height for the button
+    borderRadius: 10,
+    backgroundColor: '#ff4747',
+    alignItems: 'center',
+    justifyContent: 'center', // Center the text vertically
+    marginVertical: 10,
+  },
+  diseasesButton: {
+    flexDirection: 'row', // Arrange icon and text in a row
+    width: '90%',
+    height: 100, // Set a specific height for the button
+    borderRadius: 10,
+    backgroundColor: '#ff4747',
+    alignItems: 'center',
+    justifyContent: 'center', // Center the text vertically
+    marginVertical: 20,
+  },
+  loginButton: {
+    flexDirection: 'row', // Arrange icon and text in a row
     position: 'absolute',
+    bottom: 20,
+    width: '90%',
+    height: 60, // Set a specific height for the button
+    borderRadius: 30,
+    backgroundColor: '#ff4747',
+    alignItems: 'center',
+    justifyContent: 'center', // Center the text vertically
+  },
+  buttonText: {
+    color: '#FFFFFF',
+    fontSize: 20, // Make text bigger
+    fontWeight: 'bold', // Make text bold
+    marginLeft: 10, // Add margin to separate text from icon
   },
 });
