@@ -6,7 +6,7 @@
     <title>Disaster App with Removal & Custom Disasters</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
 
-    <!-- Mapbox GL JS (Warning: v3.3.0 no longer exists; you may need v2.13.0 or similar) -->
+    <!-- Mapbox GL JS -->
     <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
     <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
 
@@ -96,12 +96,18 @@
         <button id="toggleBlockBtn" class="ui-button">Enable Fire Mode</button>
         <button id="toggleFloodBtn" class="ui-button">Enable Flood Mode</button>
         <button id="toggleEarthquakeBtn" class="ui-button">Enable Earthquake Mode</button>
+        <button id="toggleHurricaneBtn" class="ui-button" style="background-color: #ccc;">Enable Hurricane Mode</button>
 
         <!-- Custom Disaster Controls -->
-        <h3 style="margin-top:1em;">Add Custom Disaster</h3>
-        <input id="customColorInput" class="ui-input" type="text" placeholder="Marker color (e.g. #FF0000)" />
-        <input id="customTypeInput" class="ui-input" type="text" placeholder="Disaster Type Name" />
-        <button id="startCustomBtn" class="ui-button">Start Adding Custom Disaster</button>
+        <h3 style="margin-top:1em;">Add Other Disaster</h3>
+        <button id="addOtherDisasterBtn" class="ui-button">Add Other Disaster</button>
+
+        <!-- Hidden inputs, shown only after clicking "Add Other Disaster" -->
+        <div id="customDisasterControls" style="display:none; margin-top:1em;">
+            <input id="customColorInput" class="ui-input" type="text" placeholder="Marker color (e.g. #FF0000)" />
+            <input id="customTypeInput" class="ui-input" type="text" placeholder="Disaster Type Name" />
+            <button id="startCustomBtn" class="ui-button">Start Adding Custom Disaster</button>
+        </div>
 
         <!-- Destination input -->
         <input id="destinationInput" class="ui-input" type="text" placeholder="Address or Lat,Lng..." />
@@ -148,7 +154,7 @@
         });
         map.addControl(directions, 'top-left');
 
-        // (Optional) set max bounds if you want
+        // (Optional) set max bounds
         const bounds = [
             [-80.3, 43.0],  // SW corner
             [-78.9, 44.0]   // NE corner
@@ -201,26 +207,25 @@
         });
 
         // ------------------------------------------
-        // 3) LOAD SAFE HAVENS / FIRES (and optional floods/earthquakes/custom)
+        // 3) LOAD DISASTERS (Fires, Floods, Earthquakes, Hurricanes, Custom)
         // ------------------------------------------
-        let fireFeatures = [];
-        let fireBuffers = [];
+        let allMarkers = [];
+        // We'll store all hazard buffers here (Fire, Flood, EQ, Hurricane, Custom) for route avoidance
+        let allDisasterBuffers = [];
 
         map.on('load', () => {
             loadSafeHavens();
             loadFires();
-            // Uncomment these lines:
             loadFloods();
             loadEarthquakes();
+            loadHurricanes();
             loadCustomDisasters();
         });
 
         async function loadSafeHavens() {
             try {
                 const response = await fetch('/api/safe-havens');
-                if (!response.ok) {
-                    throw new Error('Failed to load safe havens');
-                }
+                if (!response.ok) throw new Error('Failed to load safe havens');
                 const data = await response.json();
                 data.forEach((haven) => {
                     createMarkerFromDoc(haven);
@@ -233,24 +238,16 @@
         async function loadFires() {
             try {
                 const response = await fetch('/api/fires');
-                if (!response.ok) {
-                    throw new Error('Failed to load fires');
-                }
+                if (!response.ok) throw new Error('Failed to load fires');
                 const data = await response.json();
                 data.forEach((fireDoc) => {
                     createMarkerFromDoc(fireDoc);
-                    // If you want a buffer for route checks:
-                    const firePoint = turf.point(fireDoc.coords);
-                    const bufferPoly = turf.buffer(firePoint, 0.02, { units: 'kilometers' });
-                    fireFeatures.push(firePoint);
-                    fireBuffers.push(bufferPoly);
                 });
             } catch (err) {
                 console.error('Failed to load fires:', err);
             }
         }
 
-        // Example if you want to load floods from /api/floods
         async function loadFloods() {
             try {
                 const resp = await fetch('/api/floods');
@@ -267,13 +264,27 @@
         async function loadEarthquakes() {
             try {
                 const resp = await fetch('/api/earthquakes');
-                if (!resp.ok) throw new Error('Failed to load eq');
+                if (!resp.ok) throw new Error('Failed to load earthquakes');
                 const data = await resp.json();
                 data.forEach(eqDoc => {
                     createMarkerFromDoc(eqDoc);
                 });
             } catch (err) {
                 console.error('Failed to load earthquakes:', err);
+            }
+        }
+
+        // NEW: Hurricane loader
+        async function loadHurricanes() {
+            try {
+                const resp = await fetch('/api/hurricanes');
+                if (!resp.ok) throw new Error('Failed to load hurricanes');
+                const data = await resp.json();
+                data.forEach(hurrDoc => {
+                    createMarkerFromDoc(hurrDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load hurricanes:', err);
             }
         }
 
@@ -290,16 +301,13 @@
             }
         }
 
-        // This creates a marker on the map from a doc returned by server2.js
-        let allMarkers = [];
         const REFRESH_INTERVAL = 30000; // 30 seconds
 
         async function refreshMap() {
             // Remove all existing markers
             allMarkers.forEach(marker => marker.remove());
             allMarkers = [];
-            fireFeatures = [];
-            fireBuffers = [];
+            allDisasterBuffers = [];
 
             // Reload all markers
             await Promise.all([
@@ -307,8 +315,16 @@
                 loadFires(),
                 loadFloods(),
                 loadEarthquakes(),
+                loadHurricanes(),
                 loadCustomDisasters()
             ]);
+
+            // If we have an active destination, force re-check route
+            if (customDestinationActive && directions.getDestination()) {
+                // Re-trigger directions to attempt a new route
+                directions.setOrigin(directions.getOrigin());
+                directions.setDestination(directions.getDestination());
+            }
         }
 
         document.getElementById('refreshBtn').addEventListener('click', refreshMap);
@@ -318,13 +334,28 @@
 
         function createMarkerFromDoc(doc) {
             let color = '#000';
-            if (doc.type === 'Fire') color = '#FF0000';
-            else if (doc.type === 'SafeHaven') color = '#FFFF00';
-            else if (doc.type === 'Flood') color = '#0000FF';
-            else if (doc.type === 'Earthquake') color = '#8B4513';
-            else if (doc.type === 'Custom' && doc.color) color = doc.color;
+            if (doc.type === 'Fire') {
+                color = '#FF0000';
+            } else if (doc.type === 'SafeHaven') {
+                color = '#FFFF00';
+            } else if (doc.type === 'Flood') {
+                color = '#0000FF';
+            } else if (doc.type === 'Earthquake') {
+                color = '#8B4513';
+            } else if (doc.type === 'Hurricane') {
+                color = '#808080'; // grey
+            } else if (doc.type === 'Custom' && doc.color) {
+                color = doc.color;
+            }
 
-            // Store marker data first
+            // If it's not a SafeHaven, create a buffered polygon for route avoidance
+            if (doc.type !== 'SafeHaven' && doc.coords && doc.coords.length === 2) {
+                const hazardPoint = turf.point(doc.coords);
+                // For demonstration, buffer ~0.02 km (20m). Adjust as needed.
+                const bufferPoly = turf.buffer(hazardPoint, 0.02, { units: 'kilometers' });
+                allDisasterBuffers.push(bufferPoly);
+            }
+
             const markerData = {
                 marker: null,
                 disasterType: doc.type,
@@ -403,7 +434,8 @@
                     if (removeBtn) {
                         removeBtn.addEventListener('click', () => {
                             newMarker.remove();
-                            // Here you could also make an API call to delete from database
+                            // Optionally call your API to remove from DB
+                            // fetch(`/api/pins/${markerData._id}`, { method: 'DELETE' });
                         });
                     }
                 }, 0);
@@ -415,19 +447,23 @@
         }
 
         // ------------------------------------------
-        // 4) DISASTER MODES (Fire/Flood/Earthquake) + Custom
+        // 4) DISASTER MODES (Fire/Flood/Earthquake/Hurricane) + Custom
         // ------------------------------------------
         let fireMode = false;
         let floodMode = false;
         let earthquakeMode = false;
+        let hurricaneMode = false;
         let customAddMode = false;
 
+        // For custom disasters, we collect color & type from the hidden inputs
         let customColor = '#000000';
         let customType = 'Custom';
 
         const toggleBlockBtn = document.getElementById('toggleBlockBtn');
         const toggleFloodBtn = document.getElementById('toggleFloodBtn');
         const toggleEarthquakeBtn = document.getElementById('toggleEarthquakeBtn');
+        const toggleHurricaneBtn = document.getElementById('toggleHurricaneBtn');
+        const addOtherDisasterBtn = document.getElementById('addOtherDisasterBtn');
         const startCustomBtn = document.getElementById('startCustomBtn');
 
         toggleBlockBtn.addEventListener('click', () => {
@@ -435,9 +471,11 @@
             if (fireMode) {
                 floodMode = false;
                 earthquakeMode = false;
+                hurricaneMode = false;
                 customAddMode = false;
                 toggleFloodBtn.textContent = 'Enable Flood Mode';
                 toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+                toggleHurricaneBtn.textContent = 'Enable Hurricane Mode';
             }
             toggleBlockBtn.textContent = fireMode ? 'Disable Fire Mode' : 'Enable Fire Mode';
         });
@@ -447,9 +485,11 @@
             if (floodMode) {
                 fireMode = false;
                 earthquakeMode = false;
+                hurricaneMode = false;
                 customAddMode = false;
                 toggleBlockBtn.textContent = 'Enable Fire Mode';
                 toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+                toggleHurricaneBtn.textContent = 'Enable Hurricane Mode';
             }
             toggleFloodBtn.textContent = floodMode ? 'Disable Flood Mode' : 'Enable Flood Mode';
         });
@@ -459,53 +499,101 @@
             if (earthquakeMode) {
                 fireMode = false;
                 floodMode = false;
+                hurricaneMode = false;
                 customAddMode = false;
                 toggleBlockBtn.textContent = 'Enable Fire Mode';
                 toggleFloodBtn.textContent = 'Enable Flood Mode';
+                toggleHurricaneBtn.textContent = 'Enable Hurricane Mode';
             }
             toggleEarthquakeBtn.textContent = earthquakeMode
                 ? 'Disable Earthquake Mode'
                 : 'Enable Earthquake Mode';
         });
 
+        toggleHurricaneBtn.addEventListener('click', () => {
+            hurricaneMode = !hurricaneMode;
+            if (hurricaneMode) {
+                fireMode = false;
+                floodMode = false;
+                earthquakeMode = false;
+                customAddMode = false;
+                toggleBlockBtn.textContent = 'Enable Fire Mode';
+                toggleFloodBtn.textContent = 'Enable Flood Mode';
+                toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+            }
+            toggleHurricaneBtn.textContent = hurricaneMode
+                ? 'Disable Hurricane Mode'
+                : 'Enable Hurricane Mode';
+        });
+
+        // Show custom disaster inputs only when user clicks "Add Other Disaster"
+        addOtherDisasterBtn.addEventListener('click', () => {
+            document.getElementById('customDisasterControls').style.display = 'block';
+        });
+
+        // Start the custom-add mode once user enters color & name
         startCustomBtn.addEventListener('click', () => {
+            const colorInput = document.getElementById('customColorInput').value.trim();
+            const typeInput = document.getElementById('customTypeInput').value.trim();
+
+            if (!colorInput || !typeInput) {
+                alert('Please enter both a color and a disaster name.');
+                return;
+            }
+
+            customColor = colorInput;
+            customType = typeInput;
+
+            // Activate custom mode and disable others
             customAddMode = true;
             fireMode = false;
             floodMode = false;
             earthquakeMode = false;
+            hurricaneMode = false;
+
             toggleBlockBtn.textContent = 'Enable Fire Mode';
             toggleFloodBtn.textContent = 'Enable Flood Mode';
             toggleEarthquakeBtn.textContent = 'Enable Earthquake Mode';
+            toggleHurricaneBtn.textContent = 'Enable Hurricane Mode';
 
-            customColor = document.getElementById('customColorInput').value.trim() || '#000000';
-            customType = document.getElementById('customTypeInput').value.trim() || 'Custom';
             alert('Click on the map to place your custom disaster marker.');
+
+            // Hide the input fields again (optional)
+            document.getElementById('customDisasterControls').style.display = 'none';
         });
 
         // ------------------------------------------
         // 5) CREATE MARKERS ON MAP CLICK => POST to server
         // ------------------------------------------
         map.on('click', async (event) => {
-            if (!fireMode && !floodMode && !earthquakeMode && !customAddMode) {
+            if (
+                !fireMode &&
+                !floodMode &&
+                !earthquakeMode &&
+                !hurricaneMode &&
+                !customAddMode
+            ) {
                 return;
             }
-            if (!userLocation) return;
+            if (!userLocation) return; // must have user location to proceed
 
             const lngLat = [event.lngLat.lng, event.lngLat.lat];
-            let endpoint = '/api/fires';  // default
+            let endpoint = '/api/fires'; // default
             let postBody = { coords: lngLat };
 
             if (floodMode) {
                 endpoint = '/api/floods';
             } else if (earthquakeMode) {
                 endpoint = '/api/earthquakes';
+            } else if (hurricaneMode) {
+                endpoint = '/api/hurricanes';
             } else if (customAddMode) {
                 endpoint = '/api/custom';
                 postBody = { coords: lngLat, color: customColor, customType };
             }
 
             try {
-                // POST to server2.js
+                // POST to server
                 const resp = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -515,7 +603,8 @@
                     throw new Error(`Failed to create pin at ${endpoint}`);
                 }
                 const createdDoc = await resp.json();
-                // Now place it on map using the same doc-based logic
+
+                // Place on map
                 createMarkerFromDoc({
                     _id: createdDoc.insertedId,
                     type: figureOutTypeFromEndpoint(endpoint, customType),
@@ -525,15 +614,7 @@
                     createdAt: new Date().toISOString()
                 });
 
-                // If it's a Fire, make a buffer
-                if (endpoint === '/api/fires') {
-                    const firePoint = turf.point(lngLat);
-                    const bufferPoly = turf.buffer(firePoint, 0.02, { units: 'kilometers' });
-                    fireFeatures.push(firePoint);
-                    fireBuffers.push(bufferPoly);
-                }
-
-                // If user is within 20 km, show warning
+                // If user is within 20 km, show a bearing-based warning
                 if (userLocation) {
                     const distanceKm = turf.distance(
                         turf.point(userLocation),
@@ -556,7 +637,7 @@
                 console.error('Error creating new pin:', err);
             }
 
-            // If we placed a custom pin, exit custom mode
+            // If we placed a custom pin, exit custom mode automatically
             if (customAddMode) {
                 customAddMode = false;
             }
@@ -566,6 +647,7 @@
             if (endpoint === '/api/fires') return 'Fire';
             if (endpoint === '/api/floods') return 'Flood';
             if (endpoint === '/api/earthquakes') return 'Earthquake';
+            if (endpoint === '/api/hurricanes') return 'Hurricane';
             if (endpoint === '/api/custom') return 'Custom';
             return customTypeName || 'Custom';
         }
@@ -584,7 +666,7 @@
         }
 
         // ------------------------------------------
-        // 6) DESTINATION INPUT
+        // 6) DESTINATION INPUT & ROUTE AVOIDANCE
         // ------------------------------------------
         let customDestinationActive = false;
         const destinationInput = document.getElementById('destinationInput');
@@ -610,8 +692,33 @@
                     return;
                 }
             }
-            // otherwise treat as address
+            // Otherwise treat as address
             directions.setDestination(inputValue);
+        });
+
+        // Listen for route results; remove routes that intersect any disasters
+        directions.on('route', (e) => {
+            const routes = e.route; // array of possible routes
+            const safeRoutes = routes.filter((route) => {
+                // Convert route geometry to a turf linestring
+                const routeLine = turf.lineString(route.geometry.coordinates);
+                // Check intersection with each disaster buffer
+                for (let buffer of allDisasterBuffers) {
+                    // If NOT disjoint, we have an intersection => route is unsafe
+                    if (!turf.booleanDisjoint(routeLine, buffer)) {
+                        return false; 
+                    }
+                }
+                return true;
+            });
+
+            if (safeRoutes.length === 0) {
+                alert('No route found that avoids all disasters!');
+            } else {
+                // Overwrite the plugin's routes with our safe subset
+                // (Mapbox Directions plugin supports setRoutes in v4.x)
+                directions.setRoutes(safeRoutes);
+            }
         });
     </script>
 </body>
