@@ -19,6 +19,13 @@ else:
     print("No pin found or coordinates not available")
 
 #Come from the backend
+
+from pathlib import Path
+
+file_path = Path('BackOEC/earthquakes.txt')
+
+data = file_path.read_text()
+
 data = ' '
 marker_lat = 0
 marker_lon = 0
