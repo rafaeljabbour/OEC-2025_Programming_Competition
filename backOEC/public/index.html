@@ -92,6 +92,12 @@
     <div class="ui-container">
         <h1>Disaster App</h1>
 
+        <!-- Add Login Button at the top -->
+        <button id="loginBtn" class="ui-button" onclick="window.location.href='/login.html'"
+            style="background-color: #4CAF50; color: white; margin-bottom: 20px;">
+            Login/Register
+        </button>
+
         <!-- Toggle Disaster Modes -->
         <button id="toggleBlockBtn" class="ui-button">Enable Fire Mode</button>
         <button id="toggleFloodBtn" class="ui-button">Enable Flood Mode</button>
@@ -705,7 +711,7 @@
                 for (let buffer of allDisasterBuffers) {
                     // If NOT disjoint, we have an intersection => route is unsafe
                     if (!turf.booleanDisjoint(routeLine, buffer)) {
-                        return false; 
+                        return false;
                     }
                 }
                 return true;
