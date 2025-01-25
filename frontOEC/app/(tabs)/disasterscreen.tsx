@@ -15,7 +15,7 @@ export default function WebScreen2() {
         <Ionicons name="arrow-back" size={30} color="black" />
       </TouchableOpacity>
       {/* This is where we put the url to the backend website, essentially acts as a hyperlink */}
-      <WebView source={{ uri: 'https://www.google.com/search?q=disaster&rlz=1C5CHFA_enIN1002IN1003&oq=disaster&gs_lcrp=EgZjaHJvbWUyEQgAEEUYORhDGLEDGIAEGIoFMgYIARAjGCcyDAgCEAAYQxiABBiKBTIMCAMQABhDGIAEGIoFMgwIBBAAGEMYgAQYigUyDAgFEAAYQxiABBiKBTIMCAYQABhDGIAEGIoFMgwIBxAAGEMYgAQYigUyDAgIEAAYQxiABBiKBTIMCAkQABhDGIAEGIoF0gEIMzMyNGowajeoAgCwAgA&sourceid=chrome&ie=UTF-8' }} style={styles.webView} /> 
+      <WebView source={{ uri: 'https://disaster-production.up.railway.app/' }} style={styles.webView} /> 
     </View>
   );
 }

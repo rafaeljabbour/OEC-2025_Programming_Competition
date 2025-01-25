@@ -3,7 +3,7 @@ import { StyleSheet, Text, View } from 'react-native';
 export default function Header() {
   return (
     <View style={styles.header}>
-      <Text style={styles.headerText}>Disaster and Disease</Text>
+      <Text style={styles.headerText}>HazardHub</Text>
     </View>
   );
 }
@@ -26,6 +26,8 @@ const styles = StyleSheet.create({
     color: '#FFFFFF', // Set text color to white
     fontSize: 24, // Increase font size
     fontWeight: 'bold',
+    paddingTop:-8,
+    paddingBottom:15,
     letterSpacing: 1, // Add letter spacing
   },
 });

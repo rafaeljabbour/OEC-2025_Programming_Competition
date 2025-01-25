@@ -14,53 +14,47 @@ export default function HomeScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        
-        {/* Add the Header component here as in the loginscreen */}
-        <Header />
-
-        {currentUrl ? (
-          <WebView source={{ uri: currentUrl }} style={styles.webview} />
-        ) : (
-          <>
-            <View style={styles.contentContainer}>
-              <View style={styles.buttonContainer}>
-                <TouchableOpacity
-                  style={styles.naturalDisastersButton}
-                  onPress={() => router.push('/home')}
-                >
-                  <Icon name="user" size={30} color="#FFFFFF" /> {/* Changed icon to "user" */}
-                  <Text style={styles.buttonText}>Guest</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.diseasesButton}
-                  onPress={() => router.push('/loginscreen')}
-                >
-                  <Icon name="sign-in" size={30} color="#FFFFFF" /> {/* Changed icon to "sign-in" */}
-                  <Text style={styles.buttonText}>Login</Text>
-                </TouchableOpacity>
-              </View>
+    <SafeAreaView style={styles.container}>
+      {currentUrl ? (
+        <WebView source={{ uri: currentUrl }} style={styles.webview} />
+      ) : (
+        <>
+          <Header /> {/* Add the Header component */}
+          <View style={styles.contentContainer}>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={styles.naturalDisastersButton}
+                onPress={() => router.push('/home')}
+              >
+               <Icon name="user" size={30} color="#FFFFFF" /> {/* Changed icon to "user" */}
+                <Text style={styles.buttonText}>Guest</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.diseasesButton}
+                onPress={() => router.push('/loginscreen')}
+              >
+                <Icon name="sign-in" size={30} color="#FFFFFF" /> {/* Changed icon to "sign-in" */}
+                <Text style={styles.buttonText}>Login</Text>
+              </TouchableOpacity>
             </View>
-          </>
-        )}
-      </View>
+          </View>
+        </>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
   container: {
     flex: 1,
     justifyContent: 'flex-start',
     alignItems: 'center',
     backgroundColor: '#FFFFFF', // Set background color to white
   },
-
+  webview: {
+    flex: 1,
+    width: '100%',
+  },
   contentContainer: {
     flex: 1,
     justifyContent: 'center',
