@@ -1,0 +1,608 @@
+<!-- disease -->
+
+<!doctype html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Disease App with Removal & Custom Diseases</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Mapbox GL JS -->
+    <script src="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.js"></script>
+    <link href="https://api.tiles.mapbox.com/mapbox-gl-js/v3.3.0/mapbox-gl.css" rel="stylesheet" />
+
+    <!-- Turf.js for geometry operations (used for distance/bearing) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Turf.js/6.5.0/turf.min.js"></script>
+
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: sans-serif;
+        }
+
+        #map {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 100%;
+        }
+
+        .ui-container {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            background: rgba(255, 255, 255, 0.9);
+            border-radius: 6px;
+            padding: 16px;
+            z-index: 2;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+            width: 220px;
+        }
+
+        .ui-container h1 {
+            margin: 0 0 1em 0;
+            font-size: 1.2em;
+            text-align: center;
+        }
+
+        .ui-button,
+        .ui-input {
+            display: block;
+            width: 100%;
+            margin: 0.5em 0;
+            padding: 0.4em 0.6em;
+            font-size: 1em;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+        }
+
+        .ui-button {
+            cursor: pointer;
+            background-color: #f8f8f8;
+            transition: background-color 0.2s;
+        }
+
+        .ui-button:hover {
+            background-color: #eee;
+        }
+
+        .mapboxgl-ctrl-top-left {
+            margin-top: 10px;
+            margin-left: 10px;
+        }
+
+        .mapboxgl-popup-content {
+            max-width: 320px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Map -->
+    <div id="map"></div>
+
+    <!-- UI Container -->
+    <div class="ui-container">
+        <h1>Disease App</h1>
+
+        <!-- Toggle Disease Modes -->
+        <button id="toggleCovidBtn" class="ui-button">Enable COVID-19 Mode</button>
+        <button id="toggleFluBtn" class="ui-button">Enable Flu Mode</button>
+        <button id="toggleChickenPoxBtn" class="ui-button">Enable Chicken Pox Mode</button>
+        <button id="toggleEbolaBtn" class="ui-button" style="background-color: #ccc;">Enable Ebola Mode</button>
+
+        <!-- Add Other Disease -->
+        <button id="addOtherDiseaseBtn" class="ui-button">Add Other Disease</button>
+
+        <!-- Hidden panel for new disease name -->
+        <div id="otherDiseaseControls" style="display:none; margin-top:1em;">
+            <input id="otherDiseaseNameInput" class="ui-input" type="text" placeholder="Disease Name" />
+            <button id="startOtherDiseaseBtn" class="ui-button">Start Adding Other Disease</button>
+        </div>
+
+        <!-- Refresh & Focus -->
+        <button id="refreshBtn" class="ui-button">Refresh Map</button>
+        <button id="focusMeBtn" class="ui-button">Focus on Me</button>
+    </div>
+
+    <script>
+        'use strict';
+
+        // ------------------------------------------
+        // 1) BASIC MAP SETUP
+        // ------------------------------------------
+        mapboxgl.accessToken =
+            'pk.eyJ1IjoicmFsZHV0ZWsiLCJhIjoiY202MmR5MDViMHlmMjJucG5mcWw4emo4ZSJ9.Ox0uAsJ9O66fBpsEUOMXlw';
+
+        // Default center = McMaster University
+        const defaultCenter = [-79.9177, 43.2609];
+        const map = new mapboxgl.Map({
+            container: 'map',
+            style: 'mapbox://styles/mapbox/streets-v12',
+            center: defaultCenter,
+            zoom: 12
+        });
+
+        map.addControl(new mapboxgl.NavigationControl(), 'top-left');
+        map.addControl(
+            new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'metric' }),
+            'bottom-left'
+        );
+
+        // (Optional) set max bounds
+        const bounds = [
+            [-80.3, 43.0],  // SW corner
+            [-78.9, 44.0]   // NE corner
+        ];
+        map.setMaxBounds(bounds);
+
+        // ------------------------------------------
+        // 2) USER LOCATION
+        // ------------------------------------------
+        let userLocation = null;
+        let userMarker = null;
+
+        if ('geolocation' in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    userLocation = [position.coords.longitude, position.coords.latitude];
+                    if (!userMarker) {
+                        userMarker = new mapboxgl.Marker({ color: 'green' })
+                            .setLngLat(userLocation)
+                            .addTo(map);
+                    } else {
+                        userMarker.setLngLat(userLocation);
+                    }
+                },
+                (err) => {
+                    console.warn('Geolocation error:', err);
+                    // fallback
+                    userLocation = defaultCenter;
+                    userMarker = new mapboxgl.Marker({ color: 'green' })
+                        .setLngLat(userLocation)
+                        .addTo(map);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        } else {
+            userLocation = defaultCenter;
+            userMarker = new mapboxgl.Marker({ color: 'green' })
+                .setLngLat(userLocation)
+                .addTo(map);
+        }
+
+        document.getElementById('focusMeBtn').addEventListener('click', () => {
+            if (userLocation) {
+                map.flyTo({ center: userLocation, zoom: 14 });
+            }
+        });
+
+        // ------------------------------------------
+        // 3) LOAD DISEASE DATA (COVID-19, Flu, Chicken Pox, Ebola, Other)
+        // ------------------------------------------
+        let allMarkers = [];
+
+        map.on('load', () => {
+            loadCovid();
+            loadFlu();
+            loadChickenPox();
+            loadEbola();
+            loadOtherDiseases();
+        });
+
+        async function loadCovid() {
+            try {
+                const response = await fetch('/api/covid');
+                if (!response.ok) throw new Error('Failed to load COVID-19 data');
+                const data = await response.json();
+                data.forEach((covidDoc) => {
+                    createMarkerFromDoc(covidDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load COVID-19:', err);
+            }
+        }
+
+        async function loadFlu() {
+            try {
+                const response = await fetch('/api/flu');
+                if (!response.ok) throw new Error('Failed to load Flu data');
+                const data = await response.json();
+                data.forEach((fluDoc) => {
+                    createMarkerFromDoc(fluDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load Flu:', err);
+            }
+        }
+
+        async function loadChickenPox() {
+            try {
+                const response = await fetch('/api/chickenpox');
+                if (!response.ok) throw new Error('Failed to load Chicken Pox data');
+                const data = await response.json();
+                data.forEach((cpDoc) => {
+                    createMarkerFromDoc(cpDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load Chicken Pox:', err);
+            }
+        }
+
+        async function loadEbola() {
+            try {
+                const response = await fetch('/api/ebola');
+                if (!response.ok) throw new Error('Failed to load Ebola data');
+                const data = await response.json();
+                data.forEach((ebDoc) => {
+                    createMarkerFromDoc(ebDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load Ebola:', err);
+            }
+        }
+
+        async function loadOtherDiseases() {
+            try {
+                const response = await fetch('/api/other');
+                if (!response.ok) throw new Error('Failed to load other diseases');
+                const data = await response.json();
+                data.forEach((otherDoc) => {
+                    createMarkerFromDoc(otherDoc);
+                });
+            } catch (err) {
+                console.error('Failed to load other diseases:', err);
+            }
+        }
+
+        const REFRESH_INTERVAL = 10000; // 30 seconds
+        async function refreshMap() {
+            // Remove all existing markers
+            allMarkers.forEach(marker => marker.remove());
+            allMarkers = [];
+
+            // Reload all data
+            await Promise.all([
+                loadCovid(),
+                loadFlu(),
+                loadChickenPox(),
+                loadEbola(),
+                loadOtherDiseases()
+            ]);
+        }
+
+        document.getElementById('refreshBtn').addEventListener('click', refreshMap);
+        setInterval(refreshMap, REFRESH_INTERVAL);
+
+        function createMarkerFromDoc(doc) {
+            let color = '#000';
+            // Assign colors based on disease type
+            if (doc.type === 'COVID-19') {
+                color = '#FF0000'; // red
+            } else if (doc.type === 'Flu') {
+                color = '#0000FF'; // blue
+            } else if (doc.type === 'Chicken pox') {
+                color = '#8B4513'; // brownish
+            } else if (doc.type === 'Ebola') {
+                color = '#808080'; // gray
+            } else if (doc.type === 'Other') {
+                color = '#333333'; // very dark gray
+            }
+
+            const markerData = {
+                marker: null,
+                diseaseType: doc.type,
+                timePlaced: doc.createdAt,
+                note: '',
+                edits: doc.notes || [],
+                _id: doc._id
+            };
+
+            function getPopupHTML() {
+                const editsHTML = markerData.edits
+                    .map(e => `<li><strong>${e.time}:</strong> ${e.text}</li>`)
+                    .join('');
+                const editHistory = editsHTML
+                    ? `<p><strong>Edit History:</strong></p><ul>${editsHTML}</ul>`
+                    : '';
+
+                return `
+          <h3>${doc.type}</h3>
+          <p><strong>Time Placed:</strong> ${new Date(markerData.timePlaced).toLocaleString()}</p>
+          
+          <label for="popupNoteInput">Note:</label>
+          <textarea id="popupNoteInput" rows="2" style="width:100%;">${markerData.note}</textarea>
+          <button id="saveNoteBtn">Save Note</button>
+          <button id="removeMarkerBtn" style="margin-left:8px;">Remove Marker</button>
+          
+          ${editHistory}
+        `;
+            }
+
+            const newMarker = new mapboxgl.Marker({ color })
+                .setLngLat(doc.coords)
+                .addTo(map);
+
+            allMarkers.push(newMarker);
+            markerData.marker = newMarker;
+
+            const popup = new mapboxgl.Popup({ offset: 25 }).setHTML(getPopupHTML());
+            newMarker.setPopup(popup);
+
+            function attachPopupListeners() {
+                setTimeout(() => {
+                    const saveBtn = document.getElementById('saveNoteBtn');
+                    const removeBtn = document.getElementById('removeMarkerBtn');
+                    const textArea = document.getElementById('popupNoteInput');
+
+                    if (saveBtn && textArea) {
+                        saveBtn.addEventListener('click', async () => {
+                            const noteText = textArea.value.trim();
+                            if (!noteText) return;
+
+                            try {
+                                const resp = await fetch(`/api/pins/${markerData._id}/notes`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ text: noteText })
+                                });
+                                if (!resp.ok) throw new Error('Failed to save note');
+
+                                const updatedDoc = await resp.json();
+                                markerData.edits = updatedDoc.notes || [];
+                                markerData.note = '';
+                                textArea.value = '';
+
+                                popup.setHTML(getPopupHTML());
+                                attachPopupListeners();
+
+                                // Refresh the map after saving note
+                                await refreshMap();
+                            } catch (err) {
+                                console.error('Error saving note:', err);
+                            }
+                        });
+                    }
+
+                    if (removeBtn) {
+                        removeBtn.addEventListener('click', () => {
+                            newMarker.remove();
+                            // Optionally call your API to remove from DB
+                            // fetch(`/api/pins/${markerData._id}`, { method: 'DELETE' });
+                        });
+                    }
+                }, 0);
+            }
+
+            popup.on('open', attachPopupListeners);
+
+            return newMarker;
+        }
+
+        // ------------------------------------------
+        // 4) DISEASE MODES + OTHER
+        // ------------------------------------------
+        let covidMode = false;
+        let fluMode = false;
+        let chickenPoxMode = false;
+        let ebolaMode = false;
+        let otherMode = false;
+
+        const toggleCovidBtn = document.getElementById('toggleCovidBtn');
+        const toggleFluBtn = document.getElementById('toggleFluBtn');
+        const toggleChickenPoxBtn = document.getElementById('toggleChickenPoxBtn');
+        const toggleEbolaBtn = document.getElementById('toggleEbolaBtn');
+        const addOtherDiseaseBtn = document.getElementById('addOtherDiseaseBtn');
+        const startOtherDiseaseBtn = document.getElementById('startOtherDiseaseBtn');
+
+        toggleCovidBtn.addEventListener('click', () => {
+            covidMode = !covidMode;
+            if (covidMode) {
+                fluMode = false;
+                chickenPoxMode = false;
+                ebolaMode = false;
+                otherMode = false;
+                toggleFluBtn.textContent = 'Enable Flu Mode';
+                toggleChickenPoxBtn.textContent = 'Enable Chicken Pox Mode';
+                toggleEbolaBtn.textContent = 'Enable Ebola Mode';
+            }
+            toggleCovidBtn.textContent = covidMode
+                ? 'Disable COVID-19 Mode'
+                : 'Enable COVID-19 Mode';
+        });
+
+        toggleFluBtn.addEventListener('click', () => {
+            fluMode = !fluMode;
+            if (fluMode) {
+                covidMode = false;
+                chickenPoxMode = false;
+                ebolaMode = false;
+                otherMode = false;
+                toggleCovidBtn.textContent = 'Enable COVID-19 Mode';
+                toggleChickenPoxBtn.textContent = 'Enable Chicken Pox Mode';
+                toggleEbolaBtn.textContent = 'Enable Ebola Mode';
+            }
+            toggleFluBtn.textContent = fluMode
+                ? 'Disable Flu Mode'
+                : 'Enable Flu Mode';
+        });
+
+        toggleChickenPoxBtn.addEventListener('click', () => {
+            chickenPoxMode = !chickenPoxMode;
+            if (chickenPoxMode) {
+                covidMode = false;
+                fluMode = false;
+                ebolaMode = false;
+                otherMode = false;
+                toggleCovidBtn.textContent = 'Enable COVID-19 Mode';
+                toggleFluBtn.textContent = 'Enable Flu Mode';
+                toggleEbolaBtn.textContent = 'Enable Ebola Mode';
+            }
+            toggleChickenPoxBtn.textContent = chickenPoxMode
+                ? 'Disable Chicken Pox Mode'
+                : 'Enable Chicken Pox Mode';
+        });
+
+        toggleEbolaBtn.addEventListener('click', () => {
+            ebolaMode = !ebolaMode;
+            if (ebolaMode) {
+                covidMode = false;
+                fluMode = false;
+                chickenPoxMode = false;
+                otherMode = false;
+                toggleCovidBtn.textContent = 'Enable COVID-19 Mode';
+                toggleFluBtn.textContent = 'Enable Flu Mode';
+                toggleChickenPoxBtn.textContent = 'Enable Chicken Pox Mode';
+            }
+            toggleEbolaBtn.textContent = ebolaMode
+                ? 'Disable Ebola Mode'
+                : 'Enable Ebola Mode';
+        });
+
+        // Toggle "Add Other Disease" panel
+        addOtherDiseaseBtn.addEventListener('click', () => {
+            const panel = document.getElementById('otherDiseaseControls');
+            if (panel.style.display === 'none' || !panel.style.display) {
+                panel.style.display = 'block';
+            } else {
+                panel.style.display = 'none';
+            }
+        });
+
+        // Start the "Other Disease" mode (no color input, color is #333333)
+        startOtherDiseaseBtn.addEventListener('click', () => {
+            const diseaseName = document.getElementById('otherDiseaseNameInput').value.trim();
+            if (!diseaseName) {
+                alert('Please enter a disease name.');
+                return;
+            }
+
+            otherMode = true;
+            covidMode = false;
+            fluMode = false;
+            chickenPoxMode = false;
+            ebolaMode = false;
+
+            toggleCovidBtn.textContent = 'Enable COVID-19 Mode';
+            toggleFluBtn.textContent = 'Enable Flu Mode';
+            toggleChickenPoxBtn.textContent = 'Enable Chicken Pox Mode';
+            toggleEbolaBtn.textContent = 'Enable Ebola Mode';
+
+            alert('Click on the map to place your custom disease marker.');
+
+            // Hide the input fields again
+            document.getElementById('otherDiseaseControls').style.display = 'none';
+        });
+
+        // ------------------------------------------
+        // 5) CREATE MARKERS ON MAP CLICK => POST to server
+        // ------------------------------------------
+        map.on('click', async (event) => {
+            if (
+                !covidMode &&
+                !fluMode &&
+                !chickenPoxMode &&
+                !ebolaMode &&
+                !otherMode
+            ) {
+                return;
+            }
+            if (!userLocation) return; // must have user location to proceed
+
+            const lngLat = [event.lngLat.lng, event.lngLat.lat];
+            let endpoint = '';
+            let type = '';
+
+            if (covidMode) {
+                endpoint = '/api/covid';
+                type = 'COVID-19';
+            } else if (fluMode) {
+                endpoint = '/api/flu';
+                type = 'Flu';
+            } else if (chickenPoxMode) {
+                endpoint = '/api/chickenpox';
+                type = 'Chicken pox';
+            } else if (ebolaMode) {
+                endpoint = '/api/ebola';
+                type = 'Ebola';
+            } else if (otherMode) {
+                endpoint = '/api/other';
+                // Grab the user-entered name for "other"
+                const diseaseName = document.getElementById('otherDiseaseNameInput').value.trim();
+                type = diseaseName || 'Other';
+            }
+
+            const postBody = { coords: lngLat, type };
+
+            try {
+                // POST to server
+                const resp = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(postBody)
+                });
+                if (!resp.ok) {
+                    throw new Error(`Failed to create marker at ${endpoint}`);
+                }
+                const createdDoc = await resp.json();
+
+                // Create a new marker on the map
+                createMarkerFromDoc({
+                    _id: createdDoc.insertedId,
+                    type,
+                    coords: lngLat,
+                    notes: [],
+                    createdAt: new Date().toISOString()
+                });
+
+                // If user is within 20 km, show a bearing-based warning
+                if (userLocation) {
+                    const distanceKm = turf.distance(
+                        turf.point(userLocation),
+                        turf.point(lngLat),
+                        { units: 'kilometers' }
+                    );
+                    if (distanceKm <= 20) {
+                        const bearing = turf.bearing(
+                            turf.point(userLocation),
+                            turf.point(lngLat)
+                        );
+                        const direction = bearingToCardinal(bearing);
+                        alert(
+                            `Warning: A marker for ${type} was placed ${distanceKm.toFixed(1)} km ` +
+                            `to your ${direction}!`
+                        );
+                    }
+                }
+            } catch (err) {
+                console.error('Error creating new marker:', err);
+            }
+
+            // Exit "other" mode after placing one custom marker
+            if (otherMode) {
+                otherMode = false;
+            }
+        });
+
+        // Bearing helper
+        function bearingToCardinal(bearing) {
+            const angle = (bearing + 360) % 360;
+            if (angle >= 22.5 && angle < 67.5) return 'NE';
+            if (angle >= 67.5 && angle < 112.5) return 'E';
+            if (angle >= 112.5 && angle < 157.5) return 'SE';
+            if (angle >= 157.5 && angle < 202.5) return 'S';
+            if (angle >= 202.5 && angle < 247.5) return 'SW';
+            if (angle >= 247.5 && angle < 292.5) return 'W';
+            if (angle >= 292.5 && angle < 337.5) return 'NW';
+            return 'N';
+        }
+    </script>
+</body>
+
+</html>
