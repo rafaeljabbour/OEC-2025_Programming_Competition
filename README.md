@@ -77,7 +77,12 @@ HazardHub combines intuitive functionality with cutting-edge technology to enhan
 2. **Dynamic Routing**
    - MapBox’s Directions API recalculates routes based on reported hazards, avoiding danger zones.
 
-3. **Data Visualization**
+3. **Web Based Information**
+   - Data is obtained from embedded websites
+   - Disasters: https://disaster-production.up.railway.app/
+   - Diseases: https://disease-production.up.railway.app/ 
+
+4. **Data Visualization**
    - All hazards are displayed on the map with distinct markers and visual indicators based on type.
 
 ---
